@@ -9,6 +9,16 @@ set GENERATOR=%DESKTOP%\_build_record.py
 set USER_URL=https://x.com/WaterMiuuuuuuu
 
 echo.
+echo === [0/4] Syncing latest from GitHub ===
+cd /d "%SITE%"
+git pull --rebase
+if errorlevel 1 (
+    echo ERROR: git pull failed. Resolve conflicts manually then rerun.
+    pause
+    exit /b 1
+)
+
+echo.
 echo === [1/4] Fetching new tweets from X ===
 if not exist "%COOKIES%" (
     echo WARN: cookies file not found at %COOKIES%, skipping fetch step.
