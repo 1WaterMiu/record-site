@@ -13,7 +13,7 @@ echo === [1/4] Fetching new tweets from X ===
 if not exist "%COOKIES%" (
     echo WARN: cookies file not found at %COOKIES%, skipping fetch step.
 ) else (
-    gallery-dl --cookies "%COOKIES%" -d "%SITE%" --write-metadata "%USER_URL%"
+    gallery-dl --cookies "%COOKIES%" -d "%SITE%\x_backup" --write-metadata "%USER_URL%"
     if errorlevel 1 (
         echo WARN: gallery-dl returned an error. Continuing with existing files.
     )
