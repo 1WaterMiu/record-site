@@ -12,6 +12,11 @@
   h1 { margin:0; font-size:22px; }
   .pub-btn { padding:8px 16px; border:none; background:var(--accent); color:#fff; border-radius:8px; font-size:13px; cursor:pointer; font-weight:600; }
   .pub-btn:hover { opacity:.9; }
+  .search-box { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+  .search-box input { flex:1; padding:8px 14px; border:1px solid var(--line); border-radius:20px; font-size:14px; outline:none; font-family:inherit; background:var(--bg); }
+  .search-box input:focus { border-color:var(--accent); }
+  .search-box .search-clear { display:none; padding:4px 10px; border:none; background:none; cursor:pointer; color:var(--muted); font-size:16px; }
+  .search-box .search-clear.visible { display:inline-block; }
   #tags { display:flex; flex-wrap:wrap; gap:8px; }
   .tag-btn { padding:6px 14px; border:1px solid var(--line); border-radius:20px; background:#fff; cursor:pointer; font-size:13px; transition:all .15s; }
   .tag-btn:hover { border-color:var(--accent); }
@@ -62,6 +67,10 @@
     <h1>WaterMiu <span class="badge" id="count"></span></h1>
     <button class="pub-btn" onclick="openPublish()">+ 发布</button>
   </div>
+  <div class="search-box">
+    <input type="text" id="searchInput" placeholder="搜索标题或内容..." oninput="onSearch()">
+    <button class="search-clear" id="searchClear" onclick="clearSearch()">×</button>
+  </div>
   <div id="tags"></div>
 </header>
 <div id="grid"></div>
@@ -110,6 +119,7 @@
 let DATA = [];
 let activeTag = "全部";
 let tags = [];
+let searchQuery = "";
 
 function esc(s){return (s||"").replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
@@ -122,7 +132,8 @@ async function load(){
 
 function render(){
   const grid = document.getElementById('grid');
-  const list = activeTag==="全部" ? DATA : DATA.filter(d=>d.tag===activeTag);
+  let list = activeTag==="全部" ? DATA : DATA.filter(d=>d.tag===activeTag);
+  if (searchQuery) list = list.filter(d => (d.title||'').toLowerCase().includes(searchQuery) || (d.body||'').toLowerCase().includes(searchQuery));
   document.getElementById('count').textContent = `共 ${list.length} 条`;
   if (!list.length){ grid.innerHTML = '<div class="empty">空</div>'; return; }
   grid.innerHTML = list.map(d=>`
@@ -255,6 +266,18 @@ async function submitPublish(){
   } finally {
     btn.disabled = false;
   }
+}
+
+function onSearch(){
+  searchQuery = document.getElementById('searchInput').value.trim().toLowerCase();
+  document.getElementById('searchClear').classList.toggle('visible', searchQuery.length > 0);
+  render();
+}
+function clearSearch(){
+  document.getElementById('searchInput').value = '';
+  searchQuery = '';
+  document.getElementById('searchClear').classList.remove('visible');
+  render();
 }
 
 load();
