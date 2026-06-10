@@ -30,8 +30,8 @@
   .card-title { font-size:14px; font-weight:600; line-height:1.35; margin:0 0 4px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
   .card-date { font-size:11px; color:var(--muted); }
   .badge { float:right; font-size:11px; color:var(--muted); }
-  #modal, #pubModal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.85); z-index:100; overflow-y:auto; }
-  #modal.open, #pubModal.open { display:block; }
+  #modal, #pubModal, #editModal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.85); z-index:100; overflow-y:auto; }
+  #modal.open, #pubModal.open, #editModal.open { display:block; }
   .modal-inner { max-width:900px; margin:40px auto; background:#fff; border-radius:12px; padding:28px 32px; }
   .pub-inner { max-width:640px; }
   .close { float:right; font-size:24px; cursor:pointer; color:#666; border:none; background:none; }
@@ -59,18 +59,14 @@
   .pub-msg.err { color:#d33; }
   .pub-msg.ok { color:#2a8; }
   .hint { font-size:12px; color:var(--muted); }
-  .edit-box { margin-top:20px; padding-top:14px; border-top:1px solid var(--line); }
-  .edit-box summary { cursor:pointer; color:var(--accent); font-size:13px; font-weight:600; }
-  .edit-form { display:grid; gap:12px; margin-top:12px; }
-  .edit-form label { font-size:13px; font-weight:600; color:#444; display:block; margin-bottom:6px; }
-  .edit-form input, .edit-form textarea { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font-size:14px; outline:none; font-family:inherit; }
-  .edit-form input:focus, .edit-form textarea:focus { border-color:var(--accent); }
-  .edit-form textarea { min-height:100px; resize:vertical; }
-  .edit-submit { background:var(--accent); color:#fff; border:none; padding:10px 14px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; }
-  .edit-submit:disabled { opacity:.5; cursor:not-allowed; }
-  .edit-msg { font-size:13px; min-height:18px; }
-  .edit-msg.err { color:#d33; }
-  .edit-msg.ok { color:#2a8; }
+  .detail-actions { margin-top:18px; padding-top:16px; border-top:1px solid var(--line); }
+  .detail-edit-btn { width:100%; background:var(--accent); color:#fff; border:none; padding:12px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; }
+  .edit-image-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(92px, 1fr)); gap:10px; margin-top:8px; }
+  .edit-image-tile { position:relative; aspect-ratio:1/1; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:#f7f7f7; }
+  .edit-image-tile img { width:100%; height:100%; object-fit:cover; display:block; }
+  .image-remove { position:absolute; top:5px; right:5px; width:26px; height:26px; border:none; border-radius:50%; background:rgba(0,0,0,.62); color:#fff; font-size:18px; line-height:24px; cursor:pointer; }
+  .image-add { display:flex; align-items:center; justify-content:center; border:1px dashed var(--accent); color:var(--accent); font-size:30px; font-weight:300; cursor:pointer; }
+  .image-add input { display:none; }
 </style>
 </head>
 <body>
@@ -127,11 +123,46 @@
   </div>
 </div>
 
+<div id="editModal" onclick="if(event.target.id==='editModal')closeEdit()">
+  <div class="modal-inner pub-inner">
+    <button class="close" onclick="closeEdit()">×</button>
+    <h2 style="margin:0 0 4px;font-size:20px">修改条目</h2>
+    <form class="pub-form" onsubmit="event.preventDefault();submitEdit()">
+      <div>
+        <label>分类</label>
+        <input id="e-tag" type="text" required>
+      </div>
+      <div>
+        <label>标题</label>
+        <input id="e-title" type="text" required>
+      </div>
+      <div>
+        <label>正文</label>
+        <textarea id="e-body"></textarea>
+      </div>
+      <div>
+        <label>图片</label>
+        <div class="edit-image-grid" id="e-image-grid"></div>
+      </div>
+      <div>
+        <label>修改密码</label>
+        <input id="e-pw" type="password" required>
+      </div>
+      <button type="submit" class="pub-submit" id="e-submit">保存修改</button>
+      <div class="pub-msg" id="e-msg"></div>
+    </form>
+  </div>
+</div>
+
 <script>
 let DATA = [];
 let activeTag = "全部";
 let tags = [];
 let searchQuery = "";
+let currentEditIndex = null;
+let editKeepImages = [];
+let editNewImages = [];
+let editNewImageUrls = [];
 
 function esc(s){return (s||"").replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
@@ -182,29 +213,9 @@ function openItem(i){
     <div class="m-date">${esc(d.date)}</div>
     ${body?`<div class="m-body">${esc(body)}</div>`:''}
     <div class="m-images">${d.images.map(u=>`<img src="${esc(u)}" loading="lazy">`).join('')}</div>
-    <details class="edit-box">
-      <summary>修改</summary>
-      <form class="edit-form" onsubmit="event.preventDefault();submitEdit(${i})">
-        <div>
-          <label>分类</label>
-          <input id="e-tag-${i}" type="text" value="${esc(d.tag)}" required>
-        </div>
-        <div>
-          <label>标题</label>
-          <input id="e-title-${i}" type="text" value="${esc(d.title||'')}" required>
-        </div>
-        <div>
-          <label>正文</label>
-          <textarea id="e-body-${i}">${esc(body)}</textarea>
-        </div>
-        <div>
-          <label>修改密码</label>
-          <input id="e-pw-${i}" type="password" required>
-        </div>
-        <button type="submit" class="edit-submit" id="e-submit-${i}">保存修改</button>
-        <div class="edit-msg" id="e-msg-${i}"></div>
-      </form>
-    </details>
+    <div class="detail-actions">
+      <button class="detail-edit-btn" onclick="openEdit(${i})">修改</button>
+    </div>
   `;
   document.getElementById('modal').classList.add('open');
   document.body.style.overflow='hidden';
@@ -213,7 +224,7 @@ window.closeModal = function(){
   document.getElementById('modal').classList.remove('open');
   document.body.style.overflow='';
 };
-document.addEventListener('keydown', e=>{ if(e.key==='Escape'){closeModal();closePublish();} });
+document.addEventListener('keydown', e=>{ if(e.key==='Escape'){closeModal();closePublish();closeEdit();} });
 
 function populateTagSelect(){
   const known = tags.filter(t=>t!=="全部");
@@ -229,6 +240,73 @@ function openPublish(){
 function closePublish(){
   document.getElementById('pubModal').classList.remove('open');
   document.body.style.overflow='';
+}
+
+function openEdit(i){
+  const d = DATA[i];
+  currentEditIndex = i;
+  editKeepImages = [...(d.images || [])];
+  editNewImages = [];
+  editNewImageUrls.forEach(u=>URL.revokeObjectURL(u));
+  editNewImageUrls = [];
+  document.getElementById('e-tag').value = d.tag || '';
+  document.getElementById('e-title').value = d.title || '';
+  document.getElementById('e-body').value = d.body || '';
+  document.getElementById('e-pw').value = '';
+  const msg = document.getElementById('e-msg');
+  msg.className = 'pub-msg';
+  msg.textContent = '';
+  renderEditImages();
+  closeModal();
+  document.getElementById('editModal').classList.add('open');
+  document.body.style.overflow='hidden';
+}
+
+function closeEdit(){
+  document.getElementById('editModal').classList.remove('open');
+  document.body.style.overflow='';
+}
+
+function renderEditImages(){
+  const grid = document.getElementById('e-image-grid');
+  const oldTiles = editKeepImages.map((src, idx)=>`
+    <div class="edit-image-tile">
+      <img src="${esc(src)}" alt="">
+      <button type="button" class="image-remove" onclick="removeEditImage(${idx})">×</button>
+    </div>
+  `).join('');
+  const newTiles = editNewImages.map((item, idx)=>`
+    <div class="edit-image-tile">
+      <img src="${esc(item.url)}" alt="">
+      <button type="button" class="image-remove" onclick="removeNewEditImage(${idx})">×</button>
+    </div>
+  `).join('');
+  grid.innerHTML = oldTiles + newTiles + `
+    <label class="edit-image-tile image-add" title="添加图片">
+      <span>+</span>
+      <input type="file" accept="image/*" multiple onchange="addEditImages(this.files); this.value='';">
+    </label>
+  `;
+}
+
+function removeEditImage(idx){
+  editKeepImages.splice(idx, 1);
+  renderEditImages();
+}
+
+function removeNewEditImage(idx){
+  const item = editNewImages.splice(idx, 1)[0];
+  if (item) URL.revokeObjectURL(item.url);
+  renderEditImages();
+}
+
+function addEditImages(files){
+  for (const file of files || []){
+    const url = URL.createObjectURL(file);
+    editNewImages.push({ file, url });
+    editNewImageUrls.push(url);
+  }
+  renderEditImages();
 }
 
 document.getElementById('f-images').addEventListener('change', e=>{
@@ -309,25 +387,33 @@ async function submitPublish(){
   }
 }
 
-async function submitEdit(i){
-  const d = DATA[i];
-  const btn = document.getElementById(`e-submit-${i}`);
-  const msg = document.getElementById(`e-msg-${i}`);
-  msg.className = 'edit-msg';
+async function submitEdit(){
+  if (currentEditIndex === null) return;
+  const d = DATA[currentEditIndex];
+  const btn = document.getElementById('e-submit');
+  const msg = document.getElementById('e-msg');
+  msg.className = 'pub-msg';
   msg.textContent = '保存中...';
   btn.disabled = true;
   try {
-    const tag = document.getElementById(`e-tag-${i}`).value.trim();
-    const title = document.getElementById(`e-title-${i}`).value.trim();
-    const body = document.getElementById(`e-body-${i}`).value;
-    const password = document.getElementById(`e-pw-${i}`).value;
+    const tag = document.getElementById('e-tag').value.trim();
+    const title = document.getElementById('e-title').value.trim();
+    const body = document.getElementById('e-body').value;
+    const password = document.getElementById('e-pw').value;
     if (!tag) throw new Error('请填写分类');
     if (!title) throw new Error('请填写标题');
+
+    const images = [];
+    for (const item of editNewImages){
+      const f = item.file;
+      const ext = (f.name.split('.').pop() || 'jpg').toLowerCase();
+      images.push({ ext: ext.replace(/[^a-z0-9]/g,'') || 'jpg', data: await fileToBase64(f) });
+    }
 
     const r = await fetch('/edit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: d.id, password, tag, title, body })
+      body: JSON.stringify({ id: d.id, password, tag, title, body, keepImages: editKeepImages, images })
     });
     const result = await r.json();
     if (!r.ok) throw new Error(result.error || ('HTTP ' + r.status));
@@ -335,16 +421,15 @@ async function submitEdit(i){
     d.tag = tag;
     d.title = title;
     d.body = body.trim();
+    d.images = Array.isArray(result.images) ? result.images : [...editKeepImages];
     refreshTags();
     renderTags();
     render();
-    openItem(i);
-    const nextMsg = document.getElementById(`e-msg-${i}`);
-    document.querySelector('#m-content .edit-box').open = true;
-    nextMsg.className = 'edit-msg ok';
-    nextMsg.textContent = result.unchanged ? '没有变化' : '保存成功';
+    const nextIndex = currentEditIndex;
+    closeEdit();
+    openItem(nextIndex);
   } catch (e) {
-    msg.className = 'edit-msg err';
+    msg.className = 'pub-msg err';
     msg.textContent = '失败：' + e.message;
   } finally {
     btn.disabled = false;

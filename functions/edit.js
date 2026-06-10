@@ -1,3 +1,4 @@
+const REL_DIR = "x_backup/twitter/WaterMiuuuuuuu";
 const DATA_PATH = "data.json";
 
 export async function onRequestPost(context) {
@@ -22,6 +23,8 @@ export async function onRequestPost(context) {
   const tag = (body.tag || "").trim();
   const title = (body.title || "").trim();
   const text = (body.body || "").trim();
+  const keepImages = Array.isArray(body.keepImages) ? body.keepImages.map(String) : null;
+  const newImages = Array.isArray(body.images) ? body.images : [];
   if (!id) return jsonError(400, "id required");
   if (!tag || !title) return jsonError(400, "tag and title required");
 
@@ -39,20 +42,62 @@ export async function onRequestPost(context) {
   if (index < 0) return jsonError(404, "Record not found");
 
   const current = dataArr[index];
+  const currentImages = Array.isArray(current.images) ? current.images : [];
+  const currentImageSet = new Set(currentImages);
+  const keptImages = keepImages ? keepImages.filter((path) => currentImageSet.has(path)) : currentImages;
+  const addedImagePaths = [];
+  const imageFiles = [];
+  let nextImageNumber = getNextImageNumber(id, currentImages);
+
+  for (const img of newImages) {
+    if (!img || typeof img.data !== "string" || !img.data) {
+      return jsonError(400, "Invalid image payload");
+    }
+    const ext = (img.ext || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+    const num = nextImageNumber++;
+    const fname = `${id}_${num}.${ext}`;
+    const fpath = `${REL_DIR}/${fname}`;
+    imageFiles.push({ path: fpath, content_base64: img.data });
+    const meta = {
+      filename: `${id}_${num}`,
+      extension: ext,
+      type: "photo",
+      tweet_id: Number(id),
+      date: current.date,
+      content: `${tag}\n${title}${text ? "\n" + text : ""}`,
+      num: num,
+    };
+    imageFiles.push({
+      path: `${fpath}.json`,
+      content_base64: utf8ToBase64(JSON.stringify(meta, null, 2)),
+    });
+    addedImagePaths.push(fpath);
+  }
+
+  const finalImages = [...keptImages, ...addedImagePaths];
   const updated = {
     ...current,
     tag,
     title,
     body: text,
+    images: finalImages,
   };
 
-  if (current.tag === updated.tag && current.title === updated.title && (current.body || "") === updated.body) {
-    return jsonOk({ ok: true, id, unchanged: true });
+  if (
+    current.tag === updated.tag &&
+    current.title === updated.title &&
+    (current.body || "") === updated.body &&
+    sameArray(currentImages, finalImages)
+  ) {
+    return jsonOk({ ok: true, id, unchanged: true, images: finalImages });
   }
 
   dataArr[index] = updated;
 
   try {
+    for (const file of imageFiles) {
+      await ghCreateFile(env, file.path, file.content_base64, `edit image: ${title}`);
+    }
     const commitSha = await ghUpdateFile(
       env,
       DATA_PATH,
@@ -60,7 +105,7 @@ export async function onRequestPost(context) {
       utf8ToBase64(JSON.stringify(dataArr, null, 0)),
       `edit: ${tag} - ${title}`,
     );
-    return jsonOk({ ok: true, id, commit: commitSha });
+    return jsonOk({ ok: true, id, commit: commitSha, images: finalImages });
   } catch (e) {
     return jsonError(500, "GitHub commit failed: " + e.message);
   }
@@ -115,8 +160,20 @@ async function ghGetFile(env, path) {
   return gh(env, `/repos/${env.GITHUB_REPO}/contents/${encodeURIComponent(path)}?ref=main`);
 }
 
+async function ghCreateFile(env, path, contentBase64, message) {
+  const result = await gh(env, `/repos/${env.GITHUB_REPO}/contents/${encodePath(path)}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      message,
+      content: contentBase64,
+      branch: "main",
+    }),
+  });
+  return result.commit?.sha;
+}
+
 async function ghUpdateFile(env, path, sha, contentBase64, message) {
-  const result = await gh(env, `/repos/${env.GITHUB_REPO}/contents/${encodeURIComponent(path)}`, {
+  const result = await gh(env, `/repos/${env.GITHUB_REPO}/contents/${encodePath(path)}`, {
     method: "PUT",
     body: JSON.stringify({
       message,
@@ -126,4 +183,28 @@ async function ghUpdateFile(env, path, sha, contentBase64, message) {
     }),
   });
   return result.commit?.sha;
+}
+
+function encodePath(path) {
+  return path.split("/").map(encodeURIComponent).join("/");
+}
+
+function getNextImageNumber(id, images) {
+  let max = 0;
+  const prefix = `${id}_`;
+  for (const path of images) {
+    const name = String(path).split("/").pop() || "";
+    if (!name.startsWith(prefix)) continue;
+    const n = Number.parseInt(name.slice(prefix.length), 10);
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  return max + 1;
+}
+
+function sameArray(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
 }
