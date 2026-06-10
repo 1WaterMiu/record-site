@@ -4,7 +4,7 @@ const DATA_PATH = "data.json";
 export async function onRequestPost(context) {
   const { request, env } = context;
 
-  if (!env.PUBLISH_PASSWORD || !env.GITHUB_TOKEN || !env.GITHUB_REPO) {
+  if (!env.PUBLISH_PASSWORD || !String(env.GITHUB_TOKEN || "").trim() || !env.GITHUB_REPO) {
     return jsonError(500, "Server not configured: missing PUBLISH_PASSWORD / GITHUB_TOKEN / GITHUB_REPO");
   }
 
@@ -140,20 +140,37 @@ function utf8FromBase64(b64) {
 }
 
 async function gh(env, path, init = {}) {
+  const first = await ghFetch(env, path, init, "Bearer");
+  if (first.ok) return first.json();
+
+  if (first.status === 401) {
+    const fallback = await ghFetch(env, path, init, "token");
+    if (fallback.ok) return fallback.json();
+    throw await ghError(fallback, path);
+  }
+
+  throw await ghError(first, path);
+}
+
+async function ghFetch(env, path, init, authScheme) {
   const url = `https://api.github.com${path}`;
+  const token = String(env.GITHUB_TOKEN || "").trim();
   const headers = {
-    "Authorization": `Bearer ${env.GITHUB_TOKEN}`,
+    "Authorization": `${authScheme} ${token}`,
     "Accept": "application/vnd.github+json",
     "User-Agent": "record-site-edit",
     "X-GitHub-Api-Version": "2022-11-28",
     ...(init.headers || {}),
   };
-  const r = await fetch(url, { ...init, headers });
-  if (!r.ok) {
-    const t = await r.text();
-    throw new Error(`${r.status} ${path}: ${t.slice(0, 200)}`);
-  }
-  return r.json();
+  return fetch(url, { ...init, headers });
+}
+
+async function ghError(response, path) {
+  const t = await response.text();
+  const hint = response.status === 401
+    ? " GitHub token is invalid, expired, or missing contents write permission."
+    : "";
+  return new Error(`${response.status} ${path}: ${t.slice(0, 200)}${hint}`);
 }
 
 async function ghGetFile(env, path) {
