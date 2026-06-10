@@ -26,8 +26,10 @@ export async function onRequestPost(context) {
   if (!tag || !title) return jsonError(400, "tag and title required");
 
   let dataArr;
+  let dataFileSha;
   try {
     const cur = await ghGetFile(env, DATA_PATH);
+    dataFileSha = cur.sha;
     dataArr = JSON.parse(utf8FromBase64(cur.content));
   } catch (e) {
     return jsonError(500, "Failed to fetch data.json: " + e.message);
@@ -51,16 +53,14 @@ export async function onRequestPost(context) {
   dataArr[index] = updated;
 
   try {
-    const sha = await ghCommitFiles(
+    const commitSha = await ghUpdateFile(
       env,
-      [{
-        path: DATA_PATH,
-        content_base64: utf8ToBase64(JSON.stringify(dataArr, null, 0)),
-        encoding: "base64",
-      }],
+      DATA_PATH,
+      dataFileSha,
+      utf8ToBase64(JSON.stringify(dataArr, null, 0)),
       `edit: ${tag} - ${title}`,
     );
-    return jsonOk({ ok: true, id, commit: sha });
+    return jsonOk({ ok: true, id, commit: commitSha });
   } catch (e) {
     return jsonError(500, "GitHub commit failed: " + e.message);
   }
@@ -115,41 +115,15 @@ async function ghGetFile(env, path) {
   return gh(env, `/repos/${env.GITHUB_REPO}/contents/${encodeURIComponent(path)}?ref=main`);
 }
 
-async function ghCommitFiles(env, files, message) {
-  const repo = env.GITHUB_REPO;
-  const ref = await gh(env, `/repos/${repo}/git/ref/heads/main`);
-  const baseSha = ref.object.sha;
-  const baseCommit = await gh(env, `/repos/${repo}/git/commits/${baseSha}`);
-  const baseTreeSha = baseCommit.tree.sha;
-
-  const treeEntries = [];
-  for (const f of files) {
-    const blob = await gh(env, `/repos/${repo}/git/blobs`, {
-      method: "POST",
-      body: JSON.stringify({ content: f.content_base64, encoding: f.encoding || "base64" }),
-    });
-    treeEntries.push({
-      path: f.path,
-      mode: "100644",
-      type: "blob",
-      sha: blob.sha,
-    });
-  }
-
-  const tree = await gh(env, `/repos/${repo}/git/trees`, {
-    method: "POST",
-    body: JSON.stringify({ base_tree: baseTreeSha, tree: treeEntries }),
+async function ghUpdateFile(env, path, sha, contentBase64, message) {
+  const result = await gh(env, `/repos/${env.GITHUB_REPO}/contents/${encodeURIComponent(path)}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      message,
+      content: contentBase64,
+      sha,
+      branch: "main",
+    }),
   });
-
-  const commit = await gh(env, `/repos/${repo}/git/commits`, {
-    method: "POST",
-    body: JSON.stringify({ message, tree: tree.sha, parents: [baseSha] }),
-  });
-
-  await gh(env, `/repos/${repo}/git/refs/heads/main`, {
-    method: "PATCH",
-    body: JSON.stringify({ sha: commit.sha }),
-  });
-
-  return commit.sha;
+  return result.commit?.sha;
 }
