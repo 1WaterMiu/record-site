@@ -59,6 +59,18 @@
   .pub-msg.err { color:#d33; }
   .pub-msg.ok { color:#2a8; }
   .hint { font-size:12px; color:var(--muted); }
+  .edit-box { margin-top:20px; padding-top:14px; border-top:1px solid var(--line); }
+  .edit-box summary { cursor:pointer; color:var(--accent); font-size:13px; font-weight:600; }
+  .edit-form { display:grid; gap:12px; margin-top:12px; }
+  .edit-form label { font-size:13px; font-weight:600; color:#444; display:block; margin-bottom:6px; }
+  .edit-form input, .edit-form textarea { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font-size:14px; outline:none; font-family:inherit; }
+  .edit-form input:focus, .edit-form textarea:focus { border-color:var(--accent); }
+  .edit-form textarea { min-height:100px; resize:vertical; }
+  .edit-submit { background:var(--accent); color:#fff; border:none; padding:10px 14px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; }
+  .edit-submit:disabled { opacity:.5; cursor:not-allowed; }
+  .edit-msg { font-size:13px; min-height:18px; }
+  .edit-msg.err { color:#d33; }
+  .edit-msg.ok { color:#2a8; }
 </style>
 </head>
 <body>
@@ -126,8 +138,13 @@ function esc(s){return (s||"").replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','
 async function load(){
   const r = await fetch('data.json?t=' + Date.now());
   DATA = await r.json();
-  tags = ["全部", ...Array.from(new Set(DATA.map(d=>d.tag)))];
+  refreshTags();
   renderTags(); render(); populateTagSelect();
+}
+
+function refreshTags(){
+  tags = ["全部", ...Array.from(new Set(DATA.map(d=>d.tag)))];
+  if (!tags.includes(activeTag)) activeTag = "全部";
 }
 
 function render(){
@@ -158,12 +175,36 @@ function setTag(t){ activeTag=t; renderTags(); render(); }
 
 function openItem(i){
   const d = DATA[i];
+  const body = d.body || "";
   document.getElementById('m-content').innerHTML = `
     <span class="m-tag">${esc(d.tag)}</span>
     <h2 class="m-title">${esc(d.title||'(无标题)')}</h2>
     <div class="m-date">${esc(d.date)}</div>
-    ${d.body?`<div class="m-body">${esc(d.body)}</div>`:''}
+    ${body?`<div class="m-body">${esc(body)}</div>`:''}
     <div class="m-images">${d.images.map(u=>`<img src="${esc(u)}" loading="lazy">`).join('')}</div>
+    <details class="edit-box">
+      <summary>修改</summary>
+      <form class="edit-form" onsubmit="event.preventDefault();submitEdit(${i})">
+        <div>
+          <label>分类</label>
+          <input id="e-tag-${i}" type="text" value="${esc(d.tag)}" required>
+        </div>
+        <div>
+          <label>标题</label>
+          <input id="e-title-${i}" type="text" value="${esc(d.title||'')}" required>
+        </div>
+        <div>
+          <label>正文</label>
+          <textarea id="e-body-${i}">${esc(body)}</textarea>
+        </div>
+        <div>
+          <label>修改密码</label>
+          <input id="e-pw-${i}" type="password" required>
+        </div>
+        <button type="submit" class="edit-submit" id="e-submit-${i}">保存修改</button>
+        <div class="edit-msg" id="e-msg-${i}"></div>
+      </form>
+    </details>
   `;
   document.getElementById('modal').classList.add('open');
   document.body.style.overflow='hidden';
@@ -262,6 +303,48 @@ async function submitPublish(){
     document.getElementById('f-pw').value='';
   } catch (e) {
     msg.className = 'pub-msg err';
+    msg.textContent = '失败：' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function submitEdit(i){
+  const d = DATA[i];
+  const btn = document.getElementById(`e-submit-${i}`);
+  const msg = document.getElementById(`e-msg-${i}`);
+  msg.className = 'edit-msg';
+  msg.textContent = '保存中...';
+  btn.disabled = true;
+  try {
+    const tag = document.getElementById(`e-tag-${i}`).value.trim();
+    const title = document.getElementById(`e-title-${i}`).value.trim();
+    const body = document.getElementById(`e-body-${i}`).value;
+    const password = document.getElementById(`e-pw-${i}`).value;
+    if (!tag) throw new Error('请填写分类');
+    if (!title) throw new Error('请填写标题');
+
+    const r = await fetch('/edit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: d.id, password, tag, title, body })
+    });
+    const result = await r.json();
+    if (!r.ok) throw new Error(result.error || ('HTTP ' + r.status));
+
+    d.tag = tag;
+    d.title = title;
+    d.body = body.trim();
+    refreshTags();
+    renderTags();
+    render();
+    openItem(i);
+    const nextMsg = document.getElementById(`e-msg-${i}`);
+    document.querySelector('#m-content .edit-box').open = true;
+    nextMsg.className = 'edit-msg ok';
+    nextMsg.textContent = result.unchanged ? '没有变化' : '保存成功';
+  } catch (e) {
+    msg.className = 'edit-msg err';
     msg.textContent = '失败：' + e.message;
   } finally {
     btn.disabled = false;
