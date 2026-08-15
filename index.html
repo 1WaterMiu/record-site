@@ -166,6 +166,7 @@
 let DATA = [];
 let activeTag = "全部";
 let tags = [];
+const DEFAULT_TAGS = ["餐厅", "动画", "动漫", "游戏", "电影", "剧"];
 let searchQuery = "";
 let currentEditIndex = null;
 let editKeepImages = [];
@@ -208,7 +209,7 @@ async function load(){
 }
 
 function refreshTags(){
-  tags = ["全部", ...Array.from(new Set(DATA.map(d=>d.tag)))];
+  tags = ["全部", ...Array.from(new Set([...DEFAULT_TAGS, ...DATA.map(d=>d.tag)]))];
   if (!tags.includes(activeTag)) activeTag = "全部";
 }
 
