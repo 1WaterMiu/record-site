@@ -182,7 +182,7 @@ function loginPage({ selectedUser = "WaterMiu", nextPath = "/", error = "" } = {
 </head>
 <body>
 <main class="login">
-  <h1>WaterMiu</h1>
+  <h1>User</h1>
   <form method="post" action="/login" autocomplete="on">
     <input type="hidden" id="username" name="username" value="${escapeHtml(user)}">
     <input type="hidden" name="next" value="${escapeHtml(next)}">
