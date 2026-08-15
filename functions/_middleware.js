@@ -6,6 +6,14 @@ export async function onRequest(context) {
   const { request, env, next } = context;
   const url = new URL(request.url);
 
+  if (url.pathname === "/auth/user") {
+    const user = await getSessionUser(request, env) || getBasicAuthUser(request, env);
+    if (user) {
+      return jsonOk({ user, users: USERS });
+    }
+    return jsonError(401, "Authentication required");
+  }
+
   if (url.pathname === "/login") {
     if (request.method === "POST") {
       return handleLogin(request, env);
@@ -175,10 +183,11 @@ function expiredAuthCookie() {
 
 function redirectToLogin(url, cookie) {
   const next = safeNext(url.searchParams.get("next")) || "/";
+  const user = normalizeUser(url.searchParams.get("user"));
   return new Response(null, {
     status: 303,
     headers: {
-      "Location": `/login?next=${encodeURIComponent(next)}`,
+      "Location": `/login?user=${encodeURIComponent(user)}&next=${encodeURIComponent(next)}`,
       "Set-Cookie": cookie,
       "Cache-Control": "no-store",
     },
@@ -218,6 +227,16 @@ function base64Url(buffer) {
 function jsonError(status, message) {
   return new Response(JSON.stringify({ error: message }), {
     status,
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
+function jsonOk(payload) {
+  return new Response(JSON.stringify(payload), {
+    status: 200,
     headers: {
       "Content-Type": "application/json",
       "Cache-Control": "no-store",

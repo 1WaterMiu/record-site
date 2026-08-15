@@ -10,6 +10,8 @@
   header { padding:24px 32px 12px; border-bottom:1px solid var(--line); background:var(--card); position:sticky; top:0; z-index:10; }
   .header-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
   h1 { margin:0; font-size:22px; }
+  .site-user { margin:0; padding:0; border:0; background:none; color:inherit; font:inherit; font-weight:inherit; cursor:pointer; }
+  .site-user:hover, .site-user:focus-visible { color:var(--accent); outline:none; }
   .pub-btn { padding:8px 16px; border:none; background:var(--accent); color:#fff; border-radius:8px; font-size:13px; cursor:pointer; font-weight:600; }
   .pub-btn:hover { opacity:.9; }
   .search-box { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
@@ -78,7 +80,7 @@
 <body>
 <header>
   <div class="header-row">
-    <h1>WaterMiu <span class="badge" id="count"></span></h1>
+    <h1><button class="site-user" id="siteUser" type="button" onclick="switchUser()">WaterMiu</button> <span class="badge" id="count"></span></h1>
     <button class="pub-btn" onclick="openPublish()">+ 发布</button>
   </div>
   <div class="search-box">
@@ -169,10 +171,32 @@ let currentEditIndex = null;
 let editKeepImages = [];
 let editNewImages = [];
 let editNewImageUrls = [];
+let CURRENT_USER = "WaterMiu";
+const AUTH_USERS = ["WaterMiu", "Shiki"];
 
 function esc(s){return (s||"").replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
+async function loadCurrentUser(){
+  try {
+    const r = await fetch('/auth/user?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return;
+    const auth = await r.json();
+    if (auth && AUTH_USERS.includes(auth.user)){
+      CURRENT_USER = auth.user;
+      document.getElementById('siteUser').textContent = CURRENT_USER;
+    }
+  } catch (_) {}
+}
+
+function switchUser(){
+  const index = AUTH_USERS.indexOf(CURRENT_USER);
+  const next = AUTH_USERS[(index + 1) % AUTH_USERS.length] || "WaterMiu";
+  const here = window.location.pathname + window.location.search;
+  window.location.href = `/logout?user=${encodeURIComponent(next)}&next=${encodeURIComponent(here)}`;
+}
+
 async function load(){
+  loadCurrentUser();
   const r = await fetch('data.json?t=' + Date.now());
   DATA = await r.json();
   refreshTags();
