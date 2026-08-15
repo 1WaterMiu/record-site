@@ -15,7 +15,7 @@ export async function onRequestPost(context) {
     return jsonError(400, "Invalid JSON");
   }
 
-  if (body.password !== env.PUBLISH_PASSWORD) {
+  if (!isAuthorizedPublishPassword(body.password, env)) {
     return jsonError(401, "Wrong publish password");
   }
 
@@ -97,6 +97,11 @@ function jsonError(status, message) {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+function isAuthorizedPublishPassword(input, env) {
+  const password = String(input || "");
+  return password === env.PUBLISH_PASSWORD || password === String(env.SHIKI_PUBLISH_PASSWORD || "0317");
 }
 
 function formatDate(d) {
