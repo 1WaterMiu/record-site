@@ -1,8 +1,19 @@
-const REL_DIR = "x_backup/twitter/WaterMiuuuuuuu";
-const DATA_PATH = "data.json";
+import {
+  dataPathForUser,
+  getRequestUser,
+  isAuthorizedPublishPassword,
+  relDirForUser,
+} from "./_auth.js";
 
 export async function onRequestPost(context) {
   const { request, env } = context;
+  const user = await getRequestUser(request, env, context.data?.user);
+  if (!user) {
+    return jsonError(401, "Authentication required");
+  }
+
+  const relDir = relDirForUser(user);
+  const dataPath = dataPathForUser(user);
 
   if (!env.PUBLISH_PASSWORD || !env.GITHUB_TOKEN || !env.GITHUB_REPO) {
     return jsonError(500, "Server not configured: missing PUBLISH_PASSWORD / GITHUB_TOKEN / GITHUB_REPO");
@@ -15,7 +26,7 @@ export async function onRequestPost(context) {
     return jsonError(400, "Invalid JSON");
   }
 
-  if (!isAuthorizedPublishPassword(body.password, env)) {
+  if (!isAuthorizedPublishPassword(body.password, user, env)) {
     return jsonError(401, "Wrong publish password");
   }
 
@@ -36,7 +47,7 @@ export async function onRequestPost(context) {
   for (const img of images) {
     const ext = (img.ext || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
     const fname = `${id}_${num}.${ext}`;
-    const fpath = `${REL_DIR}/${fname}`;
+    const fpath = `${relDir}/${fname}`;
     files.push({ path: fpath, content_base64: img.data, encoding: "base64" });
     // metadata json so generator picks it up next regen
     const meta = {
@@ -57,7 +68,7 @@ export async function onRequestPost(context) {
     num++;
   }
 
-  // Fetch current data.json from GitHub, append new entry, recommit
+  // Fetch current user data from GitHub, append new entry, recommit
   const newEntry = {
     id: id,
     date: date,
@@ -69,14 +80,14 @@ export async function onRequestPost(context) {
 
   let dataArr;
   try {
-    const cur = await ghGetFile(env, DATA_PATH);
+    const cur = await ghGetFile(env, dataPath);
     dataArr = JSON.parse(utf8FromBase64(cur.content));
   } catch (e) {
-    return jsonError(500, "Failed to fetch data.json: " + e.message);
+    return jsonError(500, `Failed to fetch ${dataPath}: ${e.message}`);
   }
   dataArr.unshift(newEntry);
   files.push({
-    path: DATA_PATH,
+    path: dataPath,
     content_base64: utf8ToBase64(JSON.stringify(dataArr, null, 0)),
     encoding: "base64",
   });
@@ -97,11 +108,6 @@ function jsonError(status, message) {
     status,
     headers: { "Content-Type": "application/json" },
   });
-}
-
-function isAuthorizedPublishPassword(input, env) {
-  const password = String(input || "");
-  return password === env.PUBLISH_PASSWORD || password === String(env.SHIKI_PUBLISH_PASSWORD || "0317");
 }
 
 function formatDate(d) {

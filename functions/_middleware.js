@@ -1,13 +1,21 @@
-const AUTH_COOKIE = "record_auth";
-const SESSION_SECONDS = 60 * 60 * 24 * 30;
-const USERS = ["WaterMiu", "Shiki"];
+import {
+  USERS,
+  authCookie,
+  createSessionToken,
+  dataPathForUser,
+  expiredAuthCookie,
+  getRequestUser,
+  isAuthorizedUser,
+  normalizeUser,
+  relDirForUser,
+} from "./_auth.js";
 
 export async function onRequest(context) {
   const { request, env, next } = context;
   const url = new URL(request.url);
 
   if (url.pathname === "/auth/user") {
-    const user = await getSessionUser(request, env) || getBasicAuthUser(request, env);
+    const user = await getRequestUser(request, env, context.data?.user);
     if (user) {
       return jsonOk({ user, users: USERS });
     }
@@ -28,13 +36,14 @@ export async function onRequest(context) {
     return redirectToLogin(url, expiredAuthCookie());
   }
 
-  const cookieUser = await getSessionUser(request, env);
-  if (cookieUser) {
-    return next();
-  }
+  const user = await getRequestUser(request, env, context.data?.user);
+  if (user) {
+    if (!canAccessPath(user, url.pathname)) {
+      return notFound();
+    }
 
-  const basicUser = getBasicAuthUser(request, env);
-  if (basicUser) {
+    context.data = context.data || {};
+    context.data.user = user;
     return next();
   }
 
@@ -79,106 +88,21 @@ async function handleLogin(request, env) {
   });
 }
 
-function getBasicAuthUser(request, env) {
-  const auth = request.headers.get("Authorization");
-  if (!auth) return "";
+function canAccessPath(user, pathname) {
+  const currentDataPath = `/${dataPathForUser(user)}`;
+  const currentImageDir = `/${relDirForUser(user)}/`;
+  const protectedPaths = USERS.flatMap((name) => [
+    `/${dataPathForUser(name)}`,
+    `/${relDirForUser(name)}/`,
+  ]);
 
-  const [scheme, encoded] = auth.split(" ");
-  if (scheme !== "Basic" || !encoded) return "";
-
-  try {
-    const decoded = atob(encoded);
-    const idx = decoded.indexOf(":");
-    const user = idx >= 0 ? decoded.slice(0, idx) : "";
-    const pass = idx >= 0 ? decoded.slice(idx + 1) : decoded;
-    return isAuthorizedUser(user, pass, env) ? normalizeUser(user) : "";
-  } catch (_) {
-    return "";
-  }
-}
-
-function isAuthorizedUser(user, pass, env) {
-  const username = String(user || "");
-  const password = String(pass || "");
-  const users = {
-    WaterMiu: String(env.SITE_PASSWORD || "1178"),
-    Shiki: String(env.SHIKI_SITE_PASSWORD || "0317"),
-  };
-
-  if (Object.prototype.hasOwnProperty.call(users, username)) {
-    return password === users[username];
-  }
-
-  return Boolean(env.SITE_PASSWORD) && password === env.SITE_PASSWORD;
-}
-
-async function getSessionUser(request, env) {
-  const token = getCookie(request.headers.get("Cookie") || "", AUTH_COOKIE);
-  if (!token) return "";
-  return verifySessionToken(token, env);
-}
-
-async function createSessionToken(username, env) {
-  const expires = Date.now() + SESSION_SECONDS * 1000;
-  const payload = `${normalizeUser(username)}.${expires}`;
-  const signature = await sign(payload, env);
-  return `${payload}.${signature}`;
-}
-
-async function verifySessionToken(token, env) {
-  const parts = String(token || "").split(".");
-  if (parts.length !== 3) return "";
-
-  const [username, expiresText, signature] = parts;
-  const user = normalizeUser(username);
-  const expires = Number(expiresText);
-  if (!USERS.includes(user) || !Number.isFinite(expires) || expires < Date.now()) {
-    return "";
-  }
-
-  const expected = await sign(`${user}.${expiresText}`, env);
-  return timingSafeEqual(signature, expected) ? user : "";
-}
-
-async function sign(value, env) {
-  const keyBytes = new TextEncoder().encode(authSecret(env));
-  const key = await crypto.subtle.importKey(
-    "raw",
-    keyBytes,
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value));
-  return base64Url(signature);
-}
-
-function authSecret(env) {
-  return String(env.AUTH_SECRET || env.SITE_PASSWORD || env.PUBLISH_PASSWORD || "1178");
-}
-
-function getCookie(header, name) {
-  const prefix = `${name}=`;
-  for (const part of header.split(";")) {
-    const cookie = part.trim();
-    if (cookie.startsWith(prefix)) {
-      try {
-        return decodeURIComponent(cookie.slice(prefix.length));
-      } catch (_) {
-        return "";
-      }
+  for (const path of protectedPaths) {
+    if (path.endsWith("/") ? pathname.startsWith(path) : pathname === path) {
+      return path === currentDataPath || path === currentImageDir;
     }
   }
-  return "";
-}
 
-function authCookie(token, requestUrl) {
-  const secure = new URL(requestUrl).protocol === "https:" ? "; Secure" : "";
-  return `${AUTH_COOKIE}=${encodeURIComponent(token)}; Path=/; Max-Age=${SESSION_SECONDS}; HttpOnly; SameSite=Lax${secure}`;
-}
-
-function expiredAuthCookie() {
-  return `${AUTH_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`;
+  return true;
 }
 
 function redirectToLogin(url, cookie) {
@@ -200,28 +124,14 @@ function safeNext(value) {
   return next;
 }
 
-function normalizeUser(value) {
-  return USERS.includes(String(value || "")) ? String(value) : "WaterMiu";
-}
-
-function timingSafeEqual(a, b) {
-  const left = String(a || "");
-  const right = String(b || "");
-  if (left.length !== right.length) return false;
-
-  let diff = 0;
-  for (let i = 0; i < left.length; i++) {
-    diff |= left.charCodeAt(i) ^ right.charCodeAt(i);
-  }
-  return diff === 0;
-}
-
-function base64Url(buffer) {
-  let bin = "";
-  for (const byte of new Uint8Array(buffer)) {
-    bin += String.fromCharCode(byte);
-  }
-  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+function jsonOk(payload) {
+  return new Response(JSON.stringify(payload), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+    },
+  });
 }
 
 function jsonError(status, message) {
@@ -234,11 +144,11 @@ function jsonError(status, message) {
   });
 }
 
-function jsonOk(payload) {
-  return new Response(JSON.stringify(payload), {
-    status: 200,
+function notFound() {
+  return new Response("Not found", {
+    status: 404,
     headers: {
-      "Content-Type": "application/json",
+      "Content-Type": "text/plain; charset=utf-8",
       "Cache-Control": "no-store",
     },
   });
