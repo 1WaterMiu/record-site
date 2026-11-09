@@ -2,6 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>WaterMiu</title>
 <style>
   :root { --bg:#fafafa; --card:#fff; --line:#e5e5e5; --text:#222; --muted:#888; --accent:#ff6b9d; }
@@ -75,6 +76,50 @@
   .edit-image-grid .image-add:hover { background:#949494; border-color:#949494; }
   .edit-image-grid .image-add span { color:#fff; font-size:54px; line-height:1; transform:translateY(-3px); }
   .edit-image-grid .image-add input { display:none; }
+
+  /* Keep flexible content inside its column, including long titles and filenames. */
+  .header-row { gap:12px; }
+  .header-row h1 { display:flex; align-items:center; flex-wrap:wrap; gap:4px 10px; min-width:0; }
+  .pub-btn { flex-shrink:0; }
+  .search-box input, .card { min-width:0; }
+  .card-tag, .card-title, .m-title, .m-body, .hint, .pub-msg { overflow-wrap:anywhere; }
+  .pub-form input[type=file] { max-width:100%; }
+  .modal-inner { width:calc(100% - 32px); }
+  #modal, #pubModal, #editModal { overscroll-behavior-y:contain; }
+  .close { width:44px; height:44px; padding:0; margin:-8px -8px 4px 8px; }
+  button, .image-add { touch-action:manipulation; }
+
+  @media (max-width:600px) {
+    header { padding:calc(10px + env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left)); }
+    .header-row { margin-bottom:8px; }
+    h1 { font-size:20px; }
+    .site-user, .pub-btn { min-height:44px; }
+    .search-box { margin-bottom:8px; }
+    .search-box input { width:100%; min-height:44px; font-size:16px; }
+    .search-box .search-clear { flex:0 0 44px; height:44px; padding:0; }
+    #tags { flex-wrap:nowrap; overflow-x:auto; overscroll-behavior-x:contain; padding-bottom:4px; }
+    .tag-btn { flex:0 0 auto; min-height:44px; white-space:nowrap; }
+    #grid { grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; padding:12px max(12px, env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
+    .meta { padding:8px; }
+    .card-title { font-size:14px; line-height:1.5; }
+    .card-tag { max-width:100%; }
+    .empty { padding:40px 12px; }
+    .modal-inner { width:100%; min-height:100%; margin:0; border-radius:0; padding:calc(16px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+    .close { position:sticky; top:env(safe-area-inset-top, 0px); z-index:1; border-radius:50%; background:#fff; box-shadow:0 1px 6px rgba(0,0,0,.1); }
+    .m-title { font-size:20px; line-height:1.4; }
+    .m-body { font-size:16px; }
+    .pub-form input[type=text], .pub-form input[type=password], .pub-form select, .pub-form textarea { font-size:16px; min-height:44px; }
+    .pub-submit, .detail-edit-btn { min-height:48px; font-size:16px; }
+    .edit-image-grid { grid-template-columns:repeat(3, minmax(0, 1fr)); gap:8px; }
+  }
+  @media (max-width:359px) {
+    #grid { grid-template-columns:minmax(0, 1fr); }
+  }
+  @media (hover:none), (pointer:coarse) {
+    .card:hover { transform:none; box-shadow:none; }
+    .image-remove { inset:0 0 auto auto; width:44px; height:44px; border-radius:0 0 0 8px; opacity:1; pointer-events:auto; }
+    .image-remove::before { font-size:32px; transform:none; }
+  }
 </style>
 </head>
 <body>
@@ -85,7 +130,7 @@
   </div>
   <div class="search-box">
     <input type="text" id="searchInput" placeholder="搜索标题或内容..." oninput="onSearch()">
-    <button class="search-clear" id="searchClear" onclick="clearSearch()">×</button>
+    <button class="search-clear" id="searchClear" aria-label="清空搜索" onclick="clearSearch()">×</button>
   </div>
   <div id="tags"></div>
 </header>
@@ -93,14 +138,14 @@
 
 <div id="modal" onclick="if(event.target.id==='modal')closeModal()">
   <div class="modal-inner">
-    <button class="close" onclick="closeModal()">×</button>
+    <button class="close" aria-label="关闭详情" onclick="closeModal()">×</button>
     <div id="m-content"></div>
   </div>
 </div>
 
 <div id="pubModal" onclick="if(event.target.id==='pubModal')closePublish()">
   <div class="modal-inner pub-inner">
-    <button class="close" onclick="closePublish()">×</button>
+    <button class="close" aria-label="关闭发布" onclick="closePublish()">×</button>
     <h2 style="margin:0 0 4px;font-size:20px">发布新条目</h2>
     <p class="hint">提交后约 1-2 分钟后上线（Cloudflare 自动重新部署）</p>
     <form class="pub-form" onsubmit="event.preventDefault();submitPublish()">
@@ -133,7 +178,7 @@
 
 <div id="editModal" onclick="if(event.target.id==='editModal')closeEdit()">
   <div class="modal-inner pub-inner">
-    <button class="close" onclick="closeEdit()">×</button>
+    <button class="close" aria-label="关闭修改" onclick="closeEdit()">×</button>
     <h2 style="margin:0 0 4px;font-size:20px">修改条目</h2>
     <form class="pub-form" onsubmit="event.preventDefault();submitEdit()">
       <div>
@@ -233,9 +278,11 @@ function render(){
 }
 
 function renderTags(){
+  const scrollLeft = document.getElementById('tags').scrollLeft;
   document.getElementById('tags').innerHTML = tags.map(t=>
     `<button class="tag-btn${t===activeTag?' active':''}" onclick="setTag('${esc(t)}')">${esc(t)}</button>`
   ).join('');
+  document.getElementById('tags').scrollLeft = scrollLeft;
 }
 function setTag(t){ activeTag=t; renderTags(); render(); }
 
@@ -307,13 +354,13 @@ function renderEditImages(){
   const oldTiles = editKeepImages.map((src, idx)=>`
     <div class="edit-image-tile">
       <img src="${esc(src)}" alt="">
-      <button type="button" class="image-remove" onclick="removeEditImage(${idx})">×</button>
+      <button type="button" class="image-remove" aria-label="删除图片" onclick="removeEditImage(${idx})">×</button>
     </div>
   `).join('');
   const newTiles = editNewImages.map((item, idx)=>`
     <div class="edit-image-tile">
       <img src="${esc(item.url)}" alt="">
-      <button type="button" class="image-remove" onclick="removeNewEditImage(${idx})">×</button>
+      <button type="button" class="image-remove" aria-label="删除新增图片" onclick="removeNewEditImage(${idx})">×</button>
     </div>
   `).join('');
   grid.innerHTML = oldTiles + newTiles + `
